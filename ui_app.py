@@ -10,6 +10,7 @@ from config import (
     PADDLE_HEIGHT,
     PADDLE_X,
     SEED,
+    SPEED_STEPS_DEFAULT,
     SMOOTHING,
 )
 from pong_env import PongEnv
@@ -55,6 +56,7 @@ class PongUI:
         self.display_paddle_y = float(self.env.paddle_y)
         self.display_ball_x = float(self.env.ball.x)
         self.display_ball_y = float(self.env.ball.y)
+        self.speed_var = tk.IntVar(value=SPEED_STEPS_DEFAULT)
 
         self.mode_var = tk.StringVar(value="mode: idle")
         self.episode_var = tk.StringVar(value="episode: 1")
@@ -152,6 +154,33 @@ class PongUI:
 
         controls_frame = tk.Frame(right_frame, bg=PANEL_BG)
         controls_frame.pack(padx=14, pady=(0, 12), fill="x")
+
+        speed_label = tk.Label(
+            controls_frame,
+            text="Speed (steps/frame)",
+            bg=PANEL_BG,
+            fg=TEXT,
+            font=STAT_FONT,
+            anchor="w",
+        )
+        speed_label.pack(fill="x", pady=(0, 2))
+
+        speed_scale = tk.Scale(
+            controls_frame,
+            from_=1,
+            to=8,
+            orient="horizontal",
+            variable=self.speed_var,
+            bg=PANEL_BG,
+            fg=TEXT,
+            troughcolor="#2a2f3d",
+            highlightthickness=0,
+            activebackground=ACCENT,
+            length=220,
+            sliderrelief="flat",
+            relief="flat",
+        )
+        speed_scale.pack(fill="x", pady=(0, 10))
 
         self._add_button(
             controls_frame,
@@ -279,24 +308,27 @@ class PongUI:
 
     def tick(self):
         if self.running:
-            if self.mode == "train":
-                action = self.agent.select_action(self.state)
-            else:
-                action = self.agent.best_action(self.state)
+            steps = max(1, self.speed_var.get())
+            for _ in range(steps):
+                if self.mode == "train":
+                    action = self.agent.select_action(self.state)
+                else:
+                    action = self.agent.best_action(self.state)
 
-            next_state, reward, done, _ = self.env.step(action)
+                next_state, reward, done, _ = self.env.step(action)
 
-            if self.mode == "train":
-                self.agent.update(self.state, action, reward, next_state, done)
+                if self.mode == "train":
+                    self.agent.update(self.state, action, reward, next_state, done)
 
-            self.state = next_state
-            self.total_reward += reward
-            if reward > 0:
-                self.hits += 1
-            self.step_in_episode += 1
+                self.state = next_state
+                self.total_reward += reward
+                if reward > 0:
+                    self.hits += 1
+                self.step_in_episode += 1
 
-            if done or self.step_in_episode >= MAX_STEPS:
-                self._finish_episode()
+                if done or self.step_in_episode >= MAX_STEPS:
+                    self._finish_episode()
+                    break
 
         self._update_display_state()
         self.draw()
