@@ -10,15 +10,35 @@ from config import (
     PADDLE_HEIGHT,
     PADDLE_X,
     SEED,
+    SMOOTHING,
 )
 from pong_env import PongEnv
 from q_agent import QLearningAgent
+
+BG = "#0f111a"
+PANEL_BG = "#151823"
+CANVAS_BG = "#0b0d14"
+GRID_COLOR = "#1b1f2a"
+BORDER_COLOR = "#2a3040"
+TEXT = "#e6e8ef"
+MUTED = "#9aa3b2"
+ACCENT = "#66e3c4"
+ACCENT_ALT = "#7aa2f7"
+BALL_COLOR = "#ff6b6b"
+BALL_GLOW = "#ff9c9c"
+PADDLE_COLOR = "#e6e8ef"
+
+TITLE_FONT = ("Fira Sans", 20, "bold")
+LABEL_FONT = ("Fira Sans", 12)
+STAT_FONT = ("Fira Code", 11)
+BUTTON_FONT = ("Fira Sans", 11, "bold")
 
 
 class PongUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Beginner RL Pong")
+        self.root.title("RL Pong Trainer")
+        self.root.configure(bg=BG)
 
         self.env = PongEnv(seed=SEED)
         self.agent = QLearningAgent(actions=[-1, 0, 1], seed=SEED)
@@ -32,6 +52,10 @@ class PongUI:
         self.state = self.env.reset()
         self.q_path = "q_table.pkl"
 
+        self.display_paddle_y = float(self.env.paddle_y)
+        self.display_ball_x = float(self.env.ball.x)
+        self.display_ball_y = float(self.env.ball.y)
+
         self.mode_var = tk.StringVar(value="mode: idle")
         self.episode_var = tk.StringVar(value="episode: 1")
         self.reward_var = tk.StringVar(value="reward: 0")
@@ -44,8 +68,61 @@ class PongUI:
         self._schedule_next_frame()
 
     def _build_ui(self):
-        stats_frame = tk.Frame(self.root)
-        stats_frame.pack(padx=10, pady=6, fill="x")
+        title = tk.Label(
+            self.root,
+            text="RL Pong Trainer",
+            bg=BG,
+            fg=TEXT,
+            font=TITLE_FONT,
+        )
+        title.pack(padx=20, pady=(18, 4), anchor="w")
+
+        subtitle = tk.Label(
+            self.root,
+            text="Watch a Q-learning agent learn to track the ball",
+            bg=BG,
+            fg=MUTED,
+            font=LABEL_FONT,
+        )
+        subtitle.pack(padx=20, pady=(0, 12), anchor="w")
+
+        main_frame = tk.Frame(self.root, bg=BG)
+        main_frame.pack(padx=20, pady=(0, 18))
+
+        left_frame = tk.Frame(main_frame, bg=BG)
+        left_frame.grid(row=0, column=0, sticky="n")
+
+        canvas_width = GRID_WIDTH * CELL_SIZE
+        canvas_height = GRID_HEIGHT * CELL_SIZE
+        self.canvas = tk.Canvas(
+            left_frame,
+            width=canvas_width,
+            height=canvas_height,
+            bg=CANVAS_BG,
+            highlightthickness=2,
+            highlightbackground=BORDER_COLOR,
+        )
+        self.canvas.pack()
+
+        right_frame = tk.Frame(
+            main_frame,
+            bg=PANEL_BG,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=2,
+        )
+        right_frame.grid(row=0, column=1, sticky="n", padx=(16, 0))
+
+        stats_title = tk.Label(
+            right_frame,
+            text="STATS",
+            bg=PANEL_BG,
+            fg=MUTED,
+            font=LABEL_FONT,
+        )
+        stats_title.pack(padx=14, pady=(14, 8), anchor="w")
+
+        stats_frame = tk.Frame(right_frame, bg=PANEL_BG)
+        stats_frame.pack(padx=14, pady=(0, 12), fill="x")
 
         labels = [
             self.mode_var,
@@ -54,50 +131,107 @@ class PongUI:
             self.hits_var,
             self.epsilon_var,
         ]
-        for idx, var in enumerate(labels):
-            tk.Label(stats_frame, textvariable=var, width=16, anchor="w").grid(
-                row=0, column=idx, padx=4
-            )
+        for var in labels:
+            tk.Label(
+                stats_frame,
+                textvariable=var,
+                bg=PANEL_BG,
+                fg=TEXT,
+                font=STAT_FONT,
+                anchor="w",
+            ).pack(fill="x", pady=2)
 
-        canvas_width = GRID_WIDTH * CELL_SIZE
-        canvas_height = GRID_HEIGHT * CELL_SIZE
-        self.canvas = tk.Canvas(
-            self.root,
-            width=canvas_width,
-            height=canvas_height,
-            bg="white",
-            highlightthickness=1,
-            highlightbackground="#333",
+        controls_title = tk.Label(
+            right_frame,
+            text="CONTROLS",
+            bg=PANEL_BG,
+            fg=MUTED,
+            font=LABEL_FONT,
         )
-        self.canvas.pack(padx=10, pady=6)
+        controls_title.pack(padx=14, pady=(6, 8), anchor="w")
 
-        controls_frame = tk.Frame(self.root)
-        controls_frame.pack(padx=10, pady=4)
+        controls_frame = tk.Frame(right_frame, bg=PANEL_BG)
+        controls_frame.pack(padx=14, pady=(0, 12), fill="x")
 
-        tk.Button(controls_frame, text="Start Training", command=self.start_training).grid(
-            row=0, column=0, padx=4, pady=2
+        self._add_button(
+            controls_frame,
+            "Start Training",
+            self.start_training,
+            bg=ACCENT,
+            fg=BG,
         )
-        tk.Button(controls_frame, text="Play (Greedy)", command=self.start_play).grid(
-            row=0, column=1, padx=4, pady=2
+        self._add_button(
+            controls_frame,
+            "Play (Greedy)",
+            self.start_play,
+            bg=ACCENT_ALT,
+            fg=BG,
         )
-        tk.Button(controls_frame, text="Stop", command=self.stop).grid(
-            row=0, column=2, padx=4, pady=2
+        self._add_button(
+            controls_frame,
+            "Stop",
+            self.stop,
+            bg="#2d3347",
+            fg=TEXT,
         )
-        tk.Button(controls_frame, text="Reset Episode", command=self.reset_episode).grid(
-            row=0, column=3, padx=4, pady=2
+        self._add_button(
+            controls_frame,
+            "Reset Episode",
+            self.reset_episode,
+            bg="#2d3347",
+            fg=TEXT,
         )
-        tk.Button(controls_frame, text="New Agent", command=self.reset_agent).grid(
-            row=1, column=0, padx=4, pady=2
+        self._add_button(
+            controls_frame,
+            "New Agent",
+            self.reset_agent,
+            bg="#2d3347",
+            fg=TEXT,
         )
-        tk.Button(controls_frame, text="Save Q-table", command=self.save_q).grid(
-            row=1, column=1, padx=4, pady=2
+        self._add_button(
+            controls_frame,
+            "Save Q-table",
+            self.save_q,
+            bg="#2d3347",
+            fg=TEXT,
         )
-        tk.Button(controls_frame, text="Load Q-table", command=self.load_q).grid(
-            row=1, column=2, padx=4, pady=2
+        self._add_button(
+            controls_frame,
+            "Load Q-table",
+            self.load_q,
+            bg="#2d3347",
+            fg=TEXT,
         )
 
-        message_label = tk.Label(self.root, textvariable=self.message_var, anchor="w")
-        message_label.pack(padx=10, pady=(0, 8), fill="x")
+        message_label = tk.Label(
+            right_frame,
+            textvariable=self.message_var,
+            bg=PANEL_BG,
+            fg=MUTED,
+            font=STAT_FONT,
+            anchor="w",
+            justify="left",
+            wraplength=240,
+        )
+        message_label.pack(padx=14, pady=(4, 14), fill="x")
+
+    def _add_button(self, parent, text, command, bg, fg):
+        button = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            bg=bg,
+            fg=fg,
+            activebackground=bg,
+            activeforeground=fg,
+            font=BUTTON_FONT,
+            relief="flat",
+            borderwidth=0,
+            padx=12,
+            pady=6,
+            cursor="hand2",
+        )
+        button.pack(fill="x", pady=4)
 
     def _schedule_next_frame(self):
         self.root.after(FRAME_DELAY_MS, self.tick)
@@ -164,6 +298,7 @@ class PongUI:
             if done or self.step_in_episode >= MAX_STEPS:
                 self._finish_episode()
 
+        self._update_display_state()
         self.draw()
         self._update_labels()
         self._schedule_next_frame()
@@ -184,6 +319,18 @@ class PongUI:
         self.step_in_episode = 0
         self.total_reward = 0
         self.hits = 0
+        self.display_paddle_y = float(self.env.paddle_y)
+        self.display_ball_x = float(self.env.ball.x)
+        self.display_ball_y = float(self.env.ball.y)
+
+    def _update_display_state(self):
+        self.display_paddle_y = self._smooth(self.display_paddle_y, self.env.paddle_y)
+        self.display_ball_x = self._smooth(self.display_ball_x, self.env.ball.x)
+        self.display_ball_y = self._smooth(self.display_ball_y, self.env.ball.y)
+
+    @staticmethod
+    def _smooth(current, target):
+        return current + (target - current) * SMOOTHING
 
     def _update_labels(self):
         self.mode_var.set(f"mode: {self.mode}")
@@ -196,32 +343,57 @@ class PongUI:
         self.canvas.delete("all")
         width = GRID_WIDTH * CELL_SIZE
         height = GRID_HEIGHT * CELL_SIZE
-        self.canvas.create_rectangle(1, 1, width - 1, height - 1, outline="#333")
+        self.canvas.create_rectangle(
+            0,
+            0,
+            width,
+            height,
+            outline=BORDER_COLOR,
+            fill=CANVAS_BG,
+            width=2,
+        )
 
-        paddle_x0 = PADDLE_X * CELL_SIZE
-        paddle_y0 = self.env.paddle_y * CELL_SIZE
-        paddle_x1 = (PADDLE_X + 1) * CELL_SIZE
-        paddle_y1 = (self.env.paddle_y + PADDLE_HEIGHT) * CELL_SIZE
+        for x in range(1, GRID_WIDTH):
+            x_pos = x * CELL_SIZE
+            self.canvas.create_line(x_pos, 0, x_pos, height, fill=GRID_COLOR)
+        for y in range(1, GRID_HEIGHT):
+            y_pos = y * CELL_SIZE
+            self.canvas.create_line(0, y_pos, width, y_pos, fill=GRID_COLOR)
+
+        paddle_x0 = PADDLE_X * CELL_SIZE + 2
+        paddle_y0 = self.display_paddle_y * CELL_SIZE + 2
+        paddle_x1 = (PADDLE_X + 1) * CELL_SIZE - 2
+        paddle_y1 = (self.display_paddle_y + PADDLE_HEIGHT) * CELL_SIZE - 2
         self.canvas.create_rectangle(
             paddle_x0,
             paddle_y0,
             paddle_x1,
             paddle_y1,
-            fill="#222",
-            outline="#222",
+            fill=PADDLE_COLOR,
+            outline=PADDLE_COLOR,
         )
 
-        ball_x0 = self.env.ball.x * CELL_SIZE
-        ball_y0 = self.env.ball.y * CELL_SIZE
-        ball_x1 = (self.env.ball.x + 1) * CELL_SIZE
-        ball_y1 = (self.env.ball.y + 1) * CELL_SIZE
+        ball_pad = CELL_SIZE * 0.18
+        ball_x0 = self.display_ball_x * CELL_SIZE + ball_pad
+        ball_y0 = self.display_ball_y * CELL_SIZE + ball_pad
+        ball_x1 = (self.display_ball_x + 1) * CELL_SIZE - ball_pad
+        ball_y1 = (self.display_ball_y + 1) * CELL_SIZE - ball_pad
+        glow_pad = ball_pad * 0.5
+        self.canvas.create_oval(
+            ball_x0 - glow_pad,
+            ball_y0 - glow_pad,
+            ball_x1 + glow_pad,
+            ball_y1 + glow_pad,
+            fill=BALL_GLOW,
+            outline=BALL_GLOW,
+        )
         self.canvas.create_oval(
             ball_x0,
             ball_y0,
             ball_x1,
             ball_y1,
-            fill="#d64545",
-            outline="#d64545",
+            fill=BALL_COLOR,
+            outline=BALL_COLOR,
         )
 
     def run(self):
