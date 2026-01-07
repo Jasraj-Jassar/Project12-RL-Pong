@@ -3,6 +3,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 *.pkl
+!q_table.pkl
 
 # C extensions
 *.so
